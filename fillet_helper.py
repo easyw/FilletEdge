@@ -4,7 +4,7 @@ import pcbnew
 from pcbnew import *
 import math
 
-___version___ = "1.0"
+___version___ = "1.1"  #kv5,6 compat
 
 
 UNIX_CONV = 1000000
@@ -55,7 +55,11 @@ class FilletWorker:
         selected = []
 
         for ele in self.board.GetDrawings():
-            if ele.IsSelected() and isinstance(ele, pcbnew.PCB_SHAPE):
+            if hasattr(pcbnew, 'PCB_SHAPE'):
+                chk = pcbnew.PCB_SHAPE
+            else:
+                chk = pcbnew.DRAWSEGMENT
+            if ele.IsSelected() and isinstance(ele, chk):
                 selected.append(ele)
 
         return selected
@@ -90,12 +94,12 @@ class FilletWorker:
             b_set = b.SetEnd
 
         a_v = pcbnew.VECTOR2I(
-            (a.GetEndX() - a.GetStartX()) * a_reverse,
-            -(a.GetEndY() - a.GetStartY()) * a_reverse
+            (a.GetEnd().x - a.GetStart().x) * a_reverse,
+            -(a.GetEnd().y - a.GetStart().y) * a_reverse
         )
         b_v = pcbnew.VECTOR2I(
-            (b.GetEndX() - b.GetStartX()) * b_reverse,
-            -(b.GetEndY() - b.GetStartY()) * b_reverse
+            (b.GetEnd().x - b.GetStart().x) * b_reverse,
+            -(b.GetEnd().y - b.GetStart().y) * b_reverse
         )
 
         # theta = a_v.Angle() * a_reverse - b_v.Angle() * b_reverse
@@ -130,6 +134,7 @@ class FilletWorker:
         a_set(a_point)
         b_set(b_point)
 
+        w = a.GetWidth()
         # check length
         if a.GetLength() == 0:
             self.board.Remove(a)
@@ -138,9 +143,12 @@ class FilletWorker:
             self.board.Remove(b)
 
         # set arc
-        s_arc = pcbnew.PCB_SHAPE()
-        s_arc.SetShape(pcbnew.SHAPE_T_ARC)
-
+        if hasattr(pcbnew,'DRAWSEGMENT'): # kv5 TBV
+            s_arc = pcbnew.DRAWSEGMENT(self.board)
+            s_arc.SetShape(pcbnew.S_ARC)
+        else:
+            s_arc = pcbnew.PCB_SHAPE()
+            s_arc.SetShape(pcbnew.SHAPE_T_ARC)
         c_v = a_v.Resize(1000000) + b_v.Resize(1000000)
         c_angle = c_v.Angle()
         # wx.LogMessage(f"CT:{c_v.getWxPoint()}, T: {c_angle} ({math.degrees(c_angle)})\n")
@@ -164,12 +172,23 @@ class FilletWorker:
         #     s_arc.SetStart(b_point)
         # if theta > 0 and c_angle > 0:
         # if deg >= 0 and a_reverse > 0 and b_reverse > 0:
-        if deg < 0:
-            s_arc.SetStart(a_point)
-        else:
-            s_arc.SetStart(b_point)
+        # if deg < 0:
+        #     s_arc.SetStart(a_point)
+        # else:
+        #     s_arc.SetStart(b_point)
 
-        s_arc.SetArcAngleAndEnd(1800 - abs(deg * 10))
+        if hasattr(pcbnew,'DRAWSEGMENT'): #kv5
+            if deg < 0:
+                s_arc.SetArcStart(a_point)
+            else:
+                s_arc.SetArcStart(b_point)
+            s_arc.SetAngle(1800 - abs(deg * 10))
+        else:
+            if deg < 0:
+                s_arc.SetStart(a_point)
+            else:
+                s_arc.SetStart(b_point)
+            s_arc.SetArcAngleAndEnd(1800 - abs(deg * 10))
 
         # if deg > 0:
         #     s_arc.SetArcAngleAndEnd(deg * 10)
@@ -181,14 +200,15 @@ class FilletWorker:
 
         if self.move_to_cut:
             a.SetLayer(44)
-            a.SetWidth(150000)
+            a.SetWidth(w) # 150000)
             b.SetLayer(44)
-            b.SetWidth(150000)
+            b.SetWidth(w) # 150000)
             s_arc.SetLayer(44)
-            s_arc.SetWidth(150000)
+            s_arc.SetWidth(w) # 150000)
 
         self.board.Add(s_arc)
-
+        # wx.LogWarning('h')
+    
         # pcbnew.Refresh()
     def calc_orientation(self, p, q, r):
         # https://www.geeksforgeeks.org/orientation-3-ordered-points/amp/
@@ -382,9 +402,9 @@ class FilletWorker:
         msg = ["Done"]
 
         if c != tc:
-            msg.append(f"Vaild Rect: {c}/{tc}")
+            msg.append("Valid Rect: {c}/{tc}") # msg.append(f"Valid Rect: {c}/{tc}")
         if c != sc:
-            msg.append(f"Success Split: {sc}/{c}")
+            msg.append("Success Split: {sc}/{c}") # (f"Success Split: {sc}/{c}")
 
         wx.LogMessage("\n".join(msg))
 
